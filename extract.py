@@ -511,6 +511,21 @@ _ALIAS_REROUTE: dict[str, str] = {
             "assiniboine", "assiniboin", "ossiniboin", "assinniboin",
             "stone indians",
         },
+        # ── Places / Water Bodies ─────────────────────────────────────────────
+        # French and archaic English names that share no tokens with the
+        # modern canonical — string similarity is too low for the
+        # disambiguator to catch these automatically.
+        "YELLOWSTONE RIVER": {
+            # Clark's phonetic spellings of French "Roche Jaune"
+            "rochejhone", "rochejhone river", "rochejhone r.",
+            "roche jaune", "roche jaune river",
+            # Variant English spellings in the journals
+            "yellow stone", "yellow stone river", "yellow stone r.",
+            "yellowstone", "yellowstone river",
+        },
+        "MILK RIVER": {
+            "river that scolds at all others", "the river that scolds",
+        },
         # ── Animal species ────────────────────────────────────────────────────
         "CANIS LATRANS": {
             "coyote", "prairie wolf", "prairie wolves", "small wolf",
