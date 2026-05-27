@@ -623,10 +623,16 @@ def write_graph(driver, chunk_id: str, date: str, result: ExtractionResult) -> N
             # to split into separate nodes despite the extraction rules, or a
             # completely different name that the LLM mis-assigned to this node
             # (e.g. "Sergt. Gass" or "Mr. Durion" landing on John Ordway).
+            # Exception: names that arrived via _ALIAS_REROUTE are human-curated
+            # and always valid aliases for their canonical — skip _alias_plausible
+            # for them so that forms like "drewyer" → GEORGE DROUILLARD and
+            # "sah-ca-gar-we-ah" → SACAGAWEA are preserved in the aliases list
+            # and therefore reachable via the full-text index.
             raw = node.name.strip()
+            reroute_confirmed = _ALIAS_REROUTE.get(raw.lower()) == node.canonicalName
             if (raw and raw != display_name and raw.upper() != node.canonicalName
                     and "&" not in raw
-                    and _alias_plausible(raw, node.canonicalName)):
+                    and (reroute_confirmed or _alias_plausible(raw, node.canonicalName))):
                 s.run(
                     f"MATCH (n:{node.label} {{canonicalName: $cn}})"
                     " WHERE NOT $raw IN coalesce(n.aliases, [])"
