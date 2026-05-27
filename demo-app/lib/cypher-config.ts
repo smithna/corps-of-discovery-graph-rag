@@ -13,6 +13,7 @@ Neo4j knowledge graph extracted from the Lewis & Clark Expedition journals (1804
 
 NODE TYPES (all have a canonicalName property unless noted):
   Person          — expedition members, Native Americans, other individuals
+                    corpsMember: true on Corps of Discovery personnel; absent/false for all others
   Place           — named locations on land  (filter: WHERE NOT node:GenericLocation)
   WaterBody       — rivers, lakes, creeks    (filter: WHERE NOT node:GenericLocation)
   AnimalSpecies   — animals observed or described
@@ -47,6 +48,11 @@ IMPORTANT — use relationship dates for temporal queries:
   r.date is the date of the journal entry the relationship was extracted from,
   making it the most precise signal for when an activity actually occurred.
   Example: MATCH (p:Person)-[r:CAMPED_AT]->(place) WHERE r.date >= date($start)
+
+IMPORTANT — never filter species by category using string matching:
+  NEVER use canonicalName CONTAINS, starts/endsWith, or regex to identify a species category.
+  Always resolve the category to a $taxon parameter and traverse BELONGS_TO* to find matching species.
+  Example: "fish" → resolve $taxon, then MATCH (s:AnimalSpecies)-[:BELONGS_TO*]->(t:Taxon {name: $taxon})
 `.trim();
 
 export const FEW_SHOT = `
@@ -55,11 +61,20 @@ MATCH (p:Person)-[:TRADED_WITH]->(n:NativeNation)
 RETURN DISTINCT n.canonicalName AS nation
 ORDER BY nation
 
+Q: What provisions did the expedition acquire in passages where the Shoshone are mentioned?
+// $nation = NativeNation anchor resolved from "Shoshone" in question
+// Uses chunkId join to find ACQUIRED_PROVISION relationships that co-occur with
+// a mention of the nation — corpsMember = true restricts to expedition members only
+MATCH (n:NativeNation {canonicalName: $nation})-[:MENTIONED_IN]->(c:Chunk)
+MATCH (p:Person)-[r:ACQUIRED_PROVISION]->(s:Supply)
+WHERE r.chunkId = c.chunkId AND p.corpsMember = true
+RETURN DISTINCT p.canonicalName AS person, s.canonicalName AS supply
+ORDER BY supply
+
 Q: What species did Lewis observe near the Columbia River?
 // $person = entity param (Person resolved from "lewis" in question)
 // $waterBody = entity param (WaterBody resolved from "columbia" in question)
-MATCH (p:Person {canonicalName: $person})-[:OBSERVED]->(s)
-WHERE (s:AnimalSpecies OR s:PlantSpecies)
+MATCH (p:Person {canonicalName: $person})-[:OBSERVED]->(s:AnimalSpecies|PlantSpecies)
 MATCH (s)-[:MENTIONED_IN]->(c:Chunk)
 MATCH (w:WaterBody {canonicalName: $waterBody})-[:MENTIONED_IN]->(c)
 RETURN DISTINCT s.canonicalName AS species, head(labels(s)) AS type
@@ -73,8 +88,10 @@ RETURN DISTINCT s.canonicalName AS species
 ORDER BY species
 
 Q: What bird families did the expedition encounter?
-MATCH (p:Person)-[:OBSERVED]->(s:AnimalSpecies)-[:BELONGS_TO*]->(f:Taxon)
-WHERE f.rank = 'family'
+// $taxon = taxonomic class resolved from "birds" in question
+MATCH (p:Person)-[:OBSERVED]->(s:AnimalSpecies)-[:BELONGS_TO*]->(f:Taxon {rank: 'family'})
+MATCH (f)-[:BELONGS_TO*]->(c:Taxon {name: $taxon})
+WHERE c.rank <> 'genus'
 RETURN DISTINCT f.name AS family, count(DISTINCT s) AS species_count
 ORDER BY species_count DESC
 
@@ -84,8 +101,8 @@ RETURN p.canonicalName AS person, collect(DISTINCT n.canonicalName) AS nations
 ORDER BY person
 
 Q: What places did the corps camp at?
-MATCH (p:Person)-[r:CAMPED_AT]->(place)
-WHERE (place:Place OR place:WaterBody) AND NOT place:GenericLocation
+MATCH (p:Person)-[r:CAMPED_AT]->(place:Place|WaterBody)
+WHERE NOT place:GenericLocation
 RETURN DISTINCT place.canonicalName AS place
 ORDER BY place.canonicalName
 LIMIT 25
@@ -96,15 +113,14 @@ RETURN DISTINCT s.canonicalName AS species
 ORDER BY species
 
 Q: Which species were most frequently mentioned?
-MATCH (s)-[:MENTIONED_IN]->(c:Chunk)
-WHERE s:AnimalSpecies OR s:PlantSpecies
+MATCH (s:AnimalSpecies|PlantSpecies)-[:MENTIONED_IN]->(c:Chunk)
 RETURN s.canonicalName AS species, head(labels(s)) AS type, count(c) AS mentions
 ORDER BY mentions DESC
 LIMIT 10
 
 Q: What is the full taxonomy of the grizzly bear?
-MATCH (s:AnimalSpecies)-[:BELONGS_TO*]->(ancestor:Taxon)
-WHERE s.canonicalName CONTAINS 'GRIZZLY'
+// $animal = specific species resolved from "grizzly bear" in question
+MATCH (s:AnimalSpecies {canonicalName: $animal})-[:BELONGS_TO*]->(ancestor:Taxon)
 RETURN s.canonicalName AS species,
        [x IN collect(ancestor) | x.rank + ': ' + x.name] AS taxonomy
 
@@ -120,14 +136,13 @@ MATCH (p:Person)-[:OBSERVED]->(s:AnimalSpecies)
 RETURN count(DISTINCT s) AS totalSpecies
 
 Q: What places did the corps visit before Sergeant Floyd died, and when?
-// $event = Event anchor (e.g. DEATH OF SERGT. FLOYD)
+// $event = Event anchor resolved from "Sergeant Floyd died" in question
 // Use r.date (the relationship's own date) — avoids false positives from places
 // mentioned in passing rather than actually visited at that time.
 MATCH (e:Event {canonicalName: $event})-[:MENTIONED_IN]->(ec:Chunk)
 WITH min(ec.date) AS eventDate
-MATCH (p:Person)-[r:VISITED|CAMPED_AT]->(place)
-WHERE (place:Place OR place:WaterBody) AND NOT place:GenericLocation
-  AND r.date < eventDate
+MATCH (p:Person)-[r:VISITED|CAMPED_AT]->(place:Place|WaterBody)
+WHERE NOT place:GenericLocation AND r.date < eventDate
 RETURN DISTINCT place.canonicalName AS place,
        min(toString(r.date)) AS visit_date
 ORDER BY visit_date
@@ -135,20 +150,19 @@ LIMIT 15
 
 Q: What places did the corps visit after leaving Fort Mandan, with dates?
 // $anchorDate injected from vector search (corpus date near Fort Mandan departure)
-MATCH (p:Person)-[r:VISITED|CAMPED_AT]->(place)
-WHERE (place:Place OR place:WaterBody) AND NOT place:GenericLocation
-  AND r.date > date($anchorDate)
+MATCH (p:Person)-[r:VISITED|CAMPED_AT]->(place:Place|WaterBody)
+WHERE NOT place:GenericLocation AND r.date > date($anchorDate)
 RETURN DISTINCT place.canonicalName AS place,
        min(toString(r.date)) AS visit_date
 ORDER BY visit_date
 LIMIT 15
 
 Q: What places did the corps visit in the two months before the birth of a child?
-// $event = Event anchor (e.g. BIRTH OF CHARBONNEAU'S SON or BIRTH OF CHILD)
+// $event = Event anchor resolved from "birth of a child" in question
 MATCH (e:Event {canonicalName: $event})-[:MENTIONED_IN]->(ec:Chunk)
 WITH min(ec.date) AS eventDate
-MATCH (p:Person)-[r:VISITED|CAMPED_AT]->(place)
-WHERE (place:Place OR place:WaterBody) AND NOT place:GenericLocation
+MATCH (p:Person)-[r:VISITED|CAMPED_AT]->(place:Place|WaterBody)
+WHERE NOT place:GenericLocation
   AND r.date >= eventDate - duration({months: 2})
   AND r.date < eventDate
 RETURN DISTINCT place.canonicalName AS place,
@@ -160,9 +174,8 @@ Q: What species were observed in the week after a significant event?
 // $event = Event anchor resolved from the question
 MATCH (e:Event {canonicalName: $event})-[:MENTIONED_IN]->(ec:Chunk)
 WITH min(ec.date) AS eventDate
-MATCH (p:Person)-[r:OBSERVED]->(s)
-WHERE (s:AnimalSpecies OR s:PlantSpecies)
-  AND r.date > eventDate
+MATCH (p:Person)-[r:OBSERVED]->(s:AnimalSpecies|PlantSpecies)
+WHERE r.date > eventDate
   AND r.date <= eventDate + duration({days: 7})
 RETURN DISTINCT s.canonicalName AS species, head(labels(s)) AS type,
        min(toString(r.date)) AS observed_date
@@ -175,35 +188,50 @@ MATCH (p:Person {canonicalName: $person})
 RETURN p.canonicalName AS canonicalName, p.aliases AS knownAs
 
 Q: What conifer or evergreen tree species did the expedition observe?
-// $taxon = taxonomic group anchor (e.g. Pinaceae, Cupressaceae) resolved from "conifer" / "evergreen"
+// $taxon = taxonomic family resolved from "conifer" / "evergreen" in question
 // Use BELONGS_TO* to find all PlantSpecies in that taxonomic group, then check they were observed
 MATCH (s:PlantSpecies)-[:BELONGS_TO*]->(t:Taxon {name: $taxon})
+WHERE t.rank <> 'genus'
 MATCH (p:Person)-[:OBSERVED]->(s)
 RETURN DISTINCT s.canonicalName AS species
 ORDER BY species
 
 Q: What rodent species were mentioned before they reached the Rocky Mountains?
-// $taxon  = Taxon anchor for rodents (Rodentia order)
-// $place  = Place anchor — use "Gates of the Rocky Mountains" as the entry-point
-//           landmark; its first mention date serves as the cutoff
+// $taxon = taxonomic order resolved from "rodent" in question
+// $place = Place anchor resolved from "Rocky Mountains" in question — first mention date serves as cutoff
 MATCH (loc:Place {canonicalName: $place})-[:MENTIONED_IN]->(c:Chunk)
 WITH min(c.date) AS cutoffDate
 MATCH (s:AnimalSpecies)-[:BELONGS_TO*]->(t:Taxon {name: $taxon})
+WHERE t.rank <> 'genus'
 MATCH (p:Person)-[r:OBSERVED]->(s)
 WHERE r.date < cutoffDate
 RETURN DISTINCT s.canonicalName AS species, min(toString(r.date)) AS first_observed
 ORDER BY first_observed
 LIMIT 20
 
+Q: What salmon species did the expedition observe after reaching the Columbia River?
+// $taxon      = taxonomic family resolved from "salmon" in question (e.g. "Salmonidae, family of salmon")
+// $waterBody  = WaterBody anchor resolved from "Columbia River" — first mention date serves as cutoff
+MATCH (w:WaterBody {canonicalName: $waterBody})-[:MENTIONED_IN]->(c:Chunk)
+WITH min(c.date) AS reachDate
+MATCH (s:AnimalSpecies)-[:BELONGS_TO*]->(t:Taxon {name: $taxon})
+WHERE t.rank <> 'genus'
+MATCH (p:Person)-[r:OBSERVED]->(s)
+WHERE r.date > reachDate
+RETURN DISTINCT s.canonicalName AS species, min(toString(r.date)) AS first_observed
+ORDER BY first_observed
+LIMIT 20
+
 Q: Were grizzly bears or salmon mentioned more often in the journals?
-// $animal = specific species anchor  (e.g. URSUS ARCTOS HORRIBILIS for grizzly bear)
-// $taxon  = taxonomic group anchor   (e.g. Salmonidae or Oncorhynchus for salmon)
+// $animal = specific species resolved from "grizzly bear" in question
+// $taxon  = taxonomic group resolved from "salmon" in question
 //
 // Rule: use $animal / $plant for a *specific* named species; use $taxon with
 // BELONGS_TO* for a *category* of species (salmon, bears, birds, etc.)
 MATCH (bear:AnimalSpecies {canonicalName: $animal})-[:MENTIONED_IN]->(c1:Chunk)
 WITH count(DISTINCT c1) AS bearMentions
 MATCH (s:AnimalSpecies)-[:BELONGS_TO*]->(t:Taxon {name: $taxon})
+WHERE t.rank <> 'genus'
 MATCH (s)-[:MENTIONED_IN]->(c2:Chunk)
 RETURN bearMentions AS grizzly_bear_mentions, count(DISTINCT c2) AS salmon_mentions
 

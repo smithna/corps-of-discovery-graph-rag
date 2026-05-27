@@ -172,12 +172,16 @@ def main() -> None:
     banner("Step 13 — Disambiguate pass 2: merge stragglers")
     run("disambiguate.py", "--phase", "2")
 
-    # ── Step 14: full-text indexes ────────────────────────────────────────────
-    banner("Step 14 — Create full-text indexes")
+    # ── Step 14: tag Corps members ────────────────────────────────────────────
+    banner("Step 14 — Tag Corps of Discovery members (corpsMember=true)")
+    run("tag_corps_members.py")
+
+    # ── Step 15: full-text indexes ────────────────────────────────────────────
+    banner("Step 15 — Create full-text indexes")
     run("setup_fulltext_indexes.py")
 
-    # ── Step 15: entity embeddings ────────────────────────────────────────────
-    banner("Step 15 — Embed entity nodes (per-label vector indexes)")
+    # ── Step 16: entity embeddings ────────────────────────────────────────────
+    banner("Step 16 — Embed entity nodes (per-label vector indexes)")
     run("embed_entities.py")
 
     # ── Done ──────────────────────────────────────────────────────────────────

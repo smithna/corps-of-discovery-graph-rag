@@ -54,8 +54,8 @@ SCHEMA: dict[str, tuple[set[str], set[str]]] = {
 
 FLIP_CYPHER = """
 MATCH (s)-[r:$($type)]->(t)
-WHERE none(l IN $allowedSources WHERE l IN labels(s))
-  AND none(l IN $allowedTargets WHERE l IN labels(t))
+WHERE (none(l IN $allowedSources WHERE l IN labels(s))
+  OR none(l IN $allowedTargets WHERE l IN labels(t)))
   AND any(l  IN $allowedSources WHERE l IN labels(t))
   AND any(l  IN $allowedTargets WHERE l IN labels(s))
 CALL apoc.refactor.invert(r) YIELD input, output, error
@@ -64,8 +64,8 @@ RETURN count(input) AS flipped
 
 DELETE_CYPHER = """
 MATCH (s)-[r:$($type)]->(t)
-WHERE NOT any(l IN $allowedSources WHERE l IN labels(s))
-   OR NOT any(l IN $allowedTargets WHERE l IN labels(t))
+WHERE none(l IN $allowedSources WHERE l IN labels(s))
+   OR none(l IN $allowedTargets WHERE l IN labels(t))
 DELETE r
 RETURN count(*) AS deleted
 """

@@ -7,12 +7,11 @@ import { ToolCallResult } from "@/lib/agent";
 
 const EXAMPLE_QUESTIONS = [
   "What did Lewis write about grizzly bears?",
-  "What species did Lewis observe near the Columbia River?",
-  "What places did the corps visit in the three weeks before Sergeant Floyd died?",
-  "What are the different names for George Drouillard in the journals?",
-  "What bird families did the expedition encounter?",
-  "Which Native Nations did the expedition trade with?",
-  "What rodent species were mentioned before they reached the Rocky Mountains?",
+  "What species did Clark observe near the Yellowstone River?",
+  "What places did the corps visit in the month before the birth of Charbonneau and Sacagawea's son?",
+  "What are the different names for Toussaint Charbonneau in the journals?",
+  "What mammal species did the expedition observe between the time that they reached the Platte River and the time they reached the Rocky Mountains?",
+  "Which Native Nations did Lewis personally meet with?",
   "In the month after Sacagawea is first mentioned in the journals, what native nations did the expedition encounter?",
 ];
 

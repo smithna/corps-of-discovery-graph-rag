@@ -60,6 +60,29 @@ UNAMBIGUOUS_SINGLE_NAMES: frozenset[str] = frozenset({
     "ORDWAY", "GASS", "PRYOR", "FLOYD",
 })
 
+# Title/rank tokens that appear as the first word in many Person names.
+# Stripped before string comparison so "Sergt. Gass" and "Sergt. Pryor" are
+# compared as "Gass" vs "Pryor" rather than sharing a high-weight prefix.
+# Only applied when the name has more than one token (protects bare surnames).
+TITLE_TOKENS: frozenset[str] = frozenset({
+    # Sergeant variants (periods stripped, lower-cased)
+    "sergt", "serjt", "sgt", "sarjt", "sjt", "seri",
+    "serjeant", "sergeant", "sergiant",
+    # Captain / Lieutenant
+    "capt", "captain",
+    "lt", "lts", "lieut", "lieuts", "lieutenant", "lieutenants",
+    # Other military ranks
+    "corp", "cpl", "corporal",
+    "pvt", "private",
+    "major", "maj",
+    "col", "colonel",
+    "gen", "general",
+    # Honorifics
+    "chief",
+    "dr", "doctor",
+    "mr", "mrs",
+})
+
 # ── Structured output ─────────────────────────────────────────────────────────
 
 class ResolutionDecision(BaseModel):
@@ -209,22 +232,37 @@ def string_candidates(driver, label: str) -> set[tuple[str, str]]:
     1. Jaro-Winkler >= JARO_CUTOFF with first-character blocking.
     2. Token containment — all tokens of the shorter name appear in the longer
        name's token set (catches abbreviations across different initials).
+
+    For Person names, leading title tokens (Sergt., Capt., Chief, etc.) are
+    stripped before comparison so rank-prefixed names for *different* people
+    don't inflate similarity scores via a shared prefix.
     """
+    titles = list(TITLE_TOKENS) if label == "Person" else []
     with driver.session() as s:
         rows = s.run(f"""
             MATCH (a:{label}), (b:{label})
             WHERE a.canonicalName < b.canonicalName
             WITH a, b,
-                 [t IN split(toLower(a.canonicalName), ' ') | trim(replace(t, '.', ''))] AS tokA,
-                 [t IN split(toLower(b.canonicalName), ' ') | trim(replace(t, '.', ''))] AS tokB
+                 [t IN split(toLower(a.canonicalName), ' ') | trim(replace(t, '.', ''))] AS tokA_raw,
+                 [t IN split(toLower(b.canonicalName), ' ') | trim(replace(t, '.', ''))] AS tokB_raw
+            WITH a, b,
+                 CASE WHEN size(tokA_raw) > 1 AND head(tokA_raw) IN $titles
+                      THEN tail(tokA_raw) ELSE tokA_raw END AS tokA,
+                 CASE WHEN size(tokB_raw) > 1 AND head(tokB_raw) IN $titles
+                      THEN tail(tokB_raw) ELSE tokB_raw END AS tokB
             WITH a, b, tokA, tokB,
-                 apoc.text.jaroWinklerDistance(a.canonicalName, b.canonicalName) AS jw
-            WHERE
-                (left(a.canonicalName, 1) = left(b.canonicalName, 1) AND jw >= {JARO_CUTOFF})
-                OR (size(tokA) <= size(tokB) AND a.canonicalName CONTAINS ' ' AND all(t IN tokA WHERE size(t) >= 3) AND all(t IN tokA WHERE t IN tokB))
-                OR (size(tokB) <  size(tokA) AND b.canonicalName CONTAINS ' ' AND all(t IN tokB WHERE size(t) >= 3) AND all(t IN tokB WHERE t IN tokA))
+                 apoc.text.join(tokA, ' ') AS strippedA,
+                 apoc.text.join(tokB, ' ') AS strippedB
+            WITH a, b, tokA, tokB, strippedA, strippedB,
+                 apoc.text.jaroWinklerDistance(strippedA, strippedB) AS jw
+            WHERE strippedA <> '' AND strippedB <> ''
+              AND (
+                (left(strippedA, 1) = left(strippedB, 1) AND jw >= {JARO_CUTOFF})
+                OR (size(tokA) <= size(tokB) AND size(tokA) > 1 AND all(t IN tokA WHERE size(t) >= 3) AND all(t IN tokA WHERE t IN tokB))
+                OR (size(tokB) <  size(tokA) AND size(tokB) > 1 AND all(t IN tokB WHERE size(t) >= 3) AND all(t IN tokB WHERE t IN tokA))
+              )
             RETURN a.canonicalName AS name1, b.canonicalName AS name2
-        """).data()
+        """, titles=titles).data()
     return {
         (r["name1"], r["name2"])
         for r in rows
