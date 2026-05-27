@@ -1,0 +1,30 @@
+# Environment
+.env
+.env.local
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Node
+node_modules/
+docs/node_modules/
+
+# Next.js
+demo-app/.next/
+demo-app/tsconfig.tsbuildinfo
+
+# Office temp files
+~$*
+
+# IDE / tooling
+.vscode/
+.claude/settings.local.json
+
+# Lock files (generated, not needed in repo)
+package-lock.json
+demo-app/package-lock.json

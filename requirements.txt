@@ -1,0 +1,7 @@
+beautifulsoup4>=4.12
+python-dotenv>=1.0
+requests>=2.31
+neo4j>=5.18
+openai>=1.30
+tiktoken>=0.7
+graphdatascience>=1.10
