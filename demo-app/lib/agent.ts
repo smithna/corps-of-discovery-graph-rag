@@ -31,6 +31,8 @@ export interface AnchorParam {
   value: string;
   /** How this value was found */
   source: "graph_lookup" | "vector_search";
+  /** Whether the entity was resolved via full-text or vector index (graph_lookup only) */
+  resolvedVia?: "fulltext" | "vector";
   /** Node label (graph_lookup only), e.g. "Person", "WaterBody" */
   entityLabel?: string;
   /** The text that was embedded to produce the entity's vector */
@@ -256,6 +258,7 @@ async function resolveParam(
         paramName:   desc.name,
         value:       rows[0].name,
         source:      "graph_lookup",
+        resolvedVia: "fulltext" as const,
         entityLabel: desc.label,
         description: rows[0].description,
         matchedTerm: desc.query,
@@ -286,6 +289,7 @@ async function resolveParam(
     paramName:   desc.name,
     value:       rows[0].name,
     source:      "graph_lookup",
+    resolvedVia: "vector" as const,
     entityLabel: desc.label,
     description: rows[0].description,
     matchedTerm: desc.query,

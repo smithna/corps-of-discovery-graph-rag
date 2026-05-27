@@ -106,9 +106,9 @@ function AnchorParamList({ params }: { params: AnchorParam[] }) {
               <span className="text-gray-600 text-[10px]">
                 {isDate
                   ? `— corpus date, vector search${p.score !== undefined ? ` (score ${p.score.toFixed(3)})` : ""}`
-                  : p.matchedTerm
-                    ? `— ${p.entityLabel ?? "entity"}, matched "${p.matchedTerm}" via full-text`
-                    : `— ${p.entityLabel ?? "entity"}, entity vector search${p.score !== undefined ? ` (score ${p.score.toFixed(3)})` : ""}`}
+                  : p.resolvedVia === "vector"
+                    ? `— ${p.entityLabel ?? "entity"}, via vector index${p.score !== undefined ? ` (score ${p.score.toFixed(3)})` : ""}`
+                    : `— ${p.entityLabel ?? "entity"}, via full-text index`}
               </span>
             </div>
             {p.description && (
