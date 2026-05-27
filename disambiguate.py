@@ -268,6 +268,7 @@ def string_candidates(driver, label: str) -> set[tuple[str, str]]:
                 OR (size(tokA) <= size(tokB) AND size(tokA) > 1 AND all(t IN tokA WHERE size(t) >= 3) AND all(t IN tokA WHERE t IN tokB))
                 OR (size(tokB) <  size(tokA) AND size(tokB) > 1 AND all(t IN tokB WHERE size(t) >= 3) AND all(t IN tokB WHERE t IN tokA))
                 OR (metLastA <> '' AND metLastB <> '' AND size(metLastA) >= 3 AND size(metLastB) >= 3
+                    AND left(last(tokA), 1) = left(last(tokB), 1)
                     AND apoc.text.jaroWinklerDistance(metLastA, metLastB) >= 0.85)
               )
             RETURN a.canonicalName AS name1, b.canonicalName AS name2
