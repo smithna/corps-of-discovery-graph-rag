@@ -511,6 +511,14 @@ _ALIAS_REROUTE: dict[str, str] = {
             "assiniboine", "assiniboin", "ossiniboin", "assinniboin",
             "stone indians",
         },
+        "CATHLAHMAH": {
+            # Chinookan people of the Columbia River delta — keep separate
+            # from the Catawba (a Carolina nation never met by the expedition).
+            # The LLM conflates them via the shared Cath-/Cat- prefix.
+            "cathlahmah", "cathlahmahs", "cathlamahs",
+            "cath lah mahs", "cath-lah-mahs",
+            "cath lah mahs wau ki a cum",
+        },
         # ── Places / Water Bodies ─────────────────────────────────────────────
         # French and archaic English names that share no tokens with the
         # modern canonical — string similarity is too low for the
