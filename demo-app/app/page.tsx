@@ -87,7 +87,7 @@ function ColumnLabel({
     <div className="flex-none flex items-center gap-2 px-4 py-2.5 border-b border-neo-border bg-neo-panel/50">
       <div className={`w-2 h-2 rounded-full ${dotColor} ${loading ? "animate-pulse" : ""}`} />
       <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">{label}</span>
-      {loading && <span className="text-xs text-gray-600 ml-auto">Retrieving…</span>}
+      {loading && <span className="text-xs text-gray-400 ml-auto">Retrieving…</span>}
     </div>
   );
 }
@@ -245,7 +245,7 @@ export default function Home() {
           </svg>
           <div>
             <h1 className="text-sm font-semibold leading-none">Lewis &amp; Clark GraphRAG</h1>
-            <p className="text-xs text-gray-500 leading-none mt-0.5">Vector RAG vs Graph RAG — side by side</p>
+            <p className="text-xs text-gray-400 leading-none mt-0.5">Vector RAG vs Graph RAG — side by side</p>
           </div>
         </div>
       </header>
@@ -267,7 +267,7 @@ export default function Home() {
             {/* Answer */}
             <div className="px-4 py-4 border-b border-neo-border/40">
               {!question ? (
-                <p className="text-sm text-gray-600">Ask a question to see a comparison.</p>
+                <p className="text-sm text-gray-400">Ask a question to see a comparison.</p>
               ) : (
                 <AnswerPane
                   text={vectorAnswer}
@@ -280,7 +280,7 @@ export default function Home() {
             {(vectorChunks.length > 0 || (vectorLoading && !vectorAnswer && !vectorStreaming)) && (
               <>
                 <div className="px-4 pt-3 pb-1">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
                     Retrieved Sources
                   </h3>
                 </div>
@@ -303,7 +303,7 @@ export default function Home() {
             {/* Answer */}
             <div className="px-4 py-4 border-b border-neo-border/40">
               {!question ? (
-                <p className="text-sm text-gray-600">Graph RAG uses structured knowledge retrieval to ground its answers.</p>
+                <p className="text-sm text-gray-400">Graph RAG uses structured knowledge retrieval to ground its answers.</p>
               ) : (
                 <AnswerPane
                   text={agentAnswer}
@@ -316,7 +316,7 @@ export default function Home() {
             {(agentToolCalls.length > 0 || agentChunks.length > 0 || (agentLoading && !agentAnswer && !agentStreaming)) && (
               <>
                 <div className="px-4 pt-3 pb-1">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
                     Agent Tools + Sources
                   </h3>
                 </div>

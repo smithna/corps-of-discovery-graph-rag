@@ -43,7 +43,7 @@ const TOOL_STYLE: Record<ToolName, { label: string; cls: string }> = {
 // ── Cypher result table ───────────────────────────────────────────────────────
 
 function CypherResults({ results }: { results: Record<string, unknown>[] }) {
-  if (results.length === 0) return <p className="text-xs text-gray-500 mt-1">No results returned.</p>;
+  if (results.length === 0) return <p className="text-xs text-gray-400 mt-1">No results returned.</p>;
   const keys = Object.keys(results[0]);
   const shown = results.slice(0, 12);
   return (
@@ -52,7 +52,7 @@ function CypherResults({ results }: { results: Record<string, unknown>[] }) {
         <thead>
           <tr>
             {keys.map((k) => (
-              <th key={k} className="text-left text-gray-500 font-mono pr-3 pb-1 border-b border-gray-700">
+              <th key={k} className="text-left text-gray-400 font-mono pr-3 pb-1 border-b border-gray-700">
                 {k}
               </th>
             ))}
@@ -71,7 +71,7 @@ function CypherResults({ results }: { results: Record<string, unknown>[] }) {
         </tbody>
       </table>
       {results.length > 12 && (
-        <p className="text-xs text-gray-600 mt-1">… and {results.length - 12} more rows</p>
+        <p className="text-xs text-gray-400 mt-1">… and {results.length - 12} more rows</p>
       )}
     </div>
   );
@@ -91,7 +91,7 @@ const ENTITY_LABEL_COLOR: Record<string, string> = {
 function AnchorParamList({ params }: { params: AnchorParam[] }) {
   return (
     <div className="mt-1 mb-2 rounded border border-gray-700/60 bg-gray-900/40 px-2.5 py-1.5 text-xs space-y-1">
-      <p className="text-gray-500 uppercase tracking-wider text-[10px] font-semibold mb-1">
+      <p className="text-gray-400 uppercase tracking-wider text-[10px] font-semibold mb-1">
         Resolved parameters
       </p>
       {params.map((p) => {
@@ -101,9 +101,9 @@ function AnchorParamList({ params }: { params: AnchorParam[] }) {
           <div key={p.paramName} className="space-y-0.5">
             <div className="flex items-baseline gap-1.5 flex-wrap">
               <span className="font-mono text-neo-green/80">${p.paramName}</span>
-              <span className="text-gray-600">=</span>
+              <span className="text-gray-400">=</span>
               <span className={`font-mono ${valueColor}`}>{p.value}</span>
-              <span className="text-gray-600 text-[10px]">
+              <span className="text-gray-400 text-[10px]">
                 {isDate
                   ? `— corpus date, vector search${p.score !== undefined ? ` (score ${p.score.toFixed(3)})` : ""}`
                   : p.resolvedVia === "vector"
@@ -112,7 +112,7 @@ function AnchorParamList({ params }: { params: AnchorParam[] }) {
               </span>
             </div>
             {p.description && (
-              <p className="text-[10px] text-gray-600 italic pl-4 leading-snug">
+              <p className="text-[10px] text-gray-400 italic pl-4 leading-snug">
                 {p.description}
               </p>
             )}
@@ -149,7 +149,7 @@ function ToolCallCard({ result, step, isLast }: { result: ToolCallResult; step: 
         </div>
 
         {/* Input */}
-        <p className="text-xs text-gray-500 italic mb-1">"{result.input}"</p>
+        <p className="text-xs text-gray-400 italic mb-1">"{result.input}"</p>
 
         {/* Resolved Cypher parameters — shows how entity names and dates were grounded */}
         {result.anchorParams && result.anchorParams.length > 0 && (
@@ -168,7 +168,7 @@ function ToolCallCard({ result, step, isLast }: { result: ToolCallResult; step: 
 
         {/* Passage count for vector/sequence tools */}
         {result.chunks && (
-          <p className="text-xs text-gray-600 mt-1">
+          <p className="text-xs text-gray-400 mt-1">
             {result.chunks.filter(c => c.retrieval !== "sequence").length} passage(s) retrieved
             {result.chunks.some(c => c.retrieval === "sequence")
               ? `, ${result.chunks.filter(c => c.retrieval === "sequence").length} via NEXT_CHUNK`
@@ -204,7 +204,7 @@ export default function SourcePanel({ chunks, toolCalls, agent, loading, inline 
 
   if (!chunks.length && !toolCalls.length) {
     return (
-      <aside className={inline ? "p-4 text-gray-600 text-sm" : "flex items-center justify-center h-full text-gray-600 text-sm p-4 text-center"}>
+      <aside className={inline ? "p-4 text-gray-400 text-sm" : "flex items-center justify-center h-full text-gray-400 text-sm p-4 text-center"}>
         Retrieved passages and graph context will appear here after you ask a question.
       </aside>
     );
@@ -235,7 +235,7 @@ export default function SourcePanel({ chunks, toolCalls, agent, loading, inline 
       {/* Passages — only show if any non-cypher tool was called, or vector mode */}
       {chunks.length > 0 && (
         <section>
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
             Journal passages ({chunks.length})
             {agent && chunks.some(c => c.retrieval === "sequence") && (
               <span className="ml-2 text-neo-green normal-case font-normal">
@@ -256,7 +256,7 @@ export default function SourcePanel({ chunks, toolCalls, agent, loading, inline 
                   }`}
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <div className="text-xs text-gray-500">
+                    <div className="text-xs text-gray-400">
                       {[chunk.author, chunk.date].filter(Boolean).join(" · ")}
                     </div>
                     {isSeq ? (

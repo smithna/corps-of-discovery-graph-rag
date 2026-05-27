@@ -42,7 +42,7 @@ export default function ChatPanel({ messages, streaming }: Props) {
               </div>
             )}
             {msg.role === "assistant" && msg.useGraph === false && (
-              <div className="text-xs text-gray-500 mb-1.5 font-medium">
+              <div className="text-xs text-gray-400 mb-1.5 font-medium">
                 Vector only
               </div>
             )}
@@ -61,7 +61,7 @@ export default function ChatPanel({ messages, streaming }: Props) {
       )}
 
       {!messages.length && !streaming && (
-        <div className="flex-1 flex items-center justify-center text-gray-600 text-sm">
+        <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
           Ask a question about the Lewis &amp; Clark Expedition.
         </div>
       )}

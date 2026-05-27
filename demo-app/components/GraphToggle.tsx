@@ -9,7 +9,7 @@ interface Props {
 export default function GraphToggle({ agent, onChange, disabled }: Props) {
   return (
     <div className="flex items-center gap-3">
-      <span className={`text-sm font-medium transition-colors ${!agent ? "text-white" : "text-gray-500"}`}>
+      <span className={`text-sm font-medium transition-colors ${!agent ? "text-white" : "text-gray-400"}`}>
         Vector RAG
       </span>
 
@@ -32,7 +32,7 @@ export default function GraphToggle({ agent, onChange, disabled }: Props) {
         />
       </button>
 
-      <span className={`text-sm font-medium transition-colors ${agent ? "text-neo-green" : "text-gray-500"}`}>
+      <span className={`text-sm font-medium transition-colors ${agent ? "text-neo-green" : "text-gray-400"}`}>
         Graph Agent
       </span>
     </div>
