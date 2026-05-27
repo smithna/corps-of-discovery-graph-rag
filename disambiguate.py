@@ -260,16 +260,15 @@ def string_candidates(driver, label: str) -> set[tuple[str, str]]:
                  apoc.text.join(tokB, ' ') AS strippedB
             WITH a, b, tokA, tokB, strippedA, strippedB,
                  apoc.text.jaroWinklerDistance(strippedA, strippedB) AS jw,
-                 [t IN tokA | apoc.text.doubleMetaphone(t)] AS metA,
-                 [t IN tokB | apoc.text.doubleMetaphone(t)] AS metB
+                 apoc.text.doubleMetaphone(last(tokA)) AS metLastA,
+                 apoc.text.doubleMetaphone(last(tokB)) AS metLastB
             WHERE strippedA <> '' AND strippedB <> ''
               AND (
                 (left(strippedA, 1) = left(strippedB, 1) AND jw >= {JARO_CUTOFF})
                 OR (size(tokA) <= size(tokB) AND size(tokA) > 1 AND all(t IN tokA WHERE size(t) >= 3) AND all(t IN tokA WHERE t IN tokB))
                 OR (size(tokB) <  size(tokA) AND size(tokB) > 1 AND all(t IN tokB WHERE size(t) >= 3) AND all(t IN tokB WHERE t IN tokA))
-                OR any(mA IN metA WHERE mA <> '' AND size(mA) >= 3 AND
-                       any(mB IN metB WHERE mB <> '' AND size(mB) >= 3 AND
-                           apoc.text.jaroWinklerDistance(mA, mB) >= 0.85))
+                OR (metLastA <> '' AND metLastB <> '' AND size(metLastA) >= 3 AND size(metLastB) >= 3
+                    AND apoc.text.jaroWinklerDistance(metLastA, metLastB) >= 0.85)
               )
             RETURN a.canonicalName AS name1, b.canonicalName AS name2
         """, titles=titles).data()
