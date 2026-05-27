@@ -669,7 +669,18 @@ def write_graph(driver, chunk_id: str, date: str, result: ExtractionResult) -> N
             if allowed:
                 start_ok, end_ok = allowed
                 if start.label not in start_ok or end.label not in end_ok:
-                    continue
+                    # Before dropping, check whether swapping endpoints would
+                    # produce a valid direction.  The LLM often reverses
+                    # relationships when the journal uses passive voice
+                    # (e.g. "Fort Mandan was where the party camped" →
+                    # (Place)-[:CAMPED_AT]->(Person) instead of the reverse).
+                    # Only flip when the reversed form is unambiguously valid
+                    # and the original form is not — doubly-invalid pairs and
+                    # symmetric types (TRADED_WITH, MET_WITH) are left as-is.
+                    if end.label in start_ok and start.label in end_ok:
+                        start, end = end, start   # flip
+                    else:
+                        continue
             s.run(
                 f"MATCH (a:{start.label} {{canonicalName: $scn}})"
                 f" MATCH (b:{end.label} {{canonicalName: $ecn}})"
