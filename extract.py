@@ -11,6 +11,7 @@ Re-run safe: chunks are marked graphExtracted=true on success and skipped.
 
 import asyncio
 import os
+import re
 from pydantic import BaseModel
 
 from dotenv import load_dotenv
@@ -144,6 +145,14 @@ CANONICAL NAME RULES:
         CRITICAL: Meriwether Lewis and William Clark are always two distinct
         Person nodes. When both appear in the same passage, emit two separate
         nodes. Never assign Lewis references as aliases of Clark or vice versa.
+        NEVER use a death, birth, or event phrase as a Person canonicalName.
+        "Death of Sergeant Floyd", "the death of Floyd", "birth of a son" —
+        these describe Events, not people. Extract the person separately
+        (canonicalName="CHARLES FLOYD") and the event separately
+        (canonicalName="DEATH OF CHARLES FLOYD").
+        NEVER include "&" in a Person name or canonicalName. A phrase like
+        "R. & Jo. Fields" or "Lewis & Clark" refers to two people — extract
+        each as a separate Person node.
     PlantSpecies / AnimalSpecies: scientific name in ALL CAPS if you are
         certain of the identification. If uncertain, use the actual genus
         followed by "SP." only if you are confident of the genus. Otherwise
@@ -220,6 +229,9 @@ text spells or abbreviates it:
   Patrick Gass              ← Gass, Sergt. Gass
   Nathaniel Pryor           ← Pryor, Sergt. Pryor
   Charles Floyd             ← Floyd, Sergt. Floyd, Serjeant Floyd, Serj. Floyd, Sergt. C. Floyd
+  Joseph Field              ← Jo Field, Jo Fields, Jos. Field, J. Field, Joseph Fields
+  Reubin Field              ← R. Field, R. Fields, Reuben Field, Reuben Fields
+  John B. Thompson          ← Thompson, J. B. Thompson, J. Thompson, Tompson
   Thomas Jefferson          ← President Jefferson, Mr. Jefferson
   Sioux                     ← Souis, Seaux, Soux, Souix
   Arikara                   ← Ricaras, Rickarees, Rees, Aricara
@@ -367,6 +379,13 @@ RULES:
   not Event.
 - If the same entity appears under different names in the text, emit it once
   using the canonical name above.
+- Each person in a passage is a distinct Person node with their own canonicalName.
+  The name field must be a spelling or abbreviation used in this passage to refer
+  to that specific individual — never a name belonging to a different person who
+  happens to appear nearby. Do not assign a co-occurring person's name as the
+  name or canonicalName of someone else.
+- Death and birth phrases are Event nodes, not Person nodes. Never emit a Person
+  node whose canonicalName starts with "DEATH OF" or "BIRTH OF".
 - If nothing extractable is found, return empty lists.
 """.strip()
 
@@ -394,6 +413,55 @@ def _is_bare_initial(cn: str) -> bool:
     return bool(_BARE_INITIAL.match(cn))
 
 
+# Title/rank tokens stripped before alias plausibility checks (must stay in
+# sync with TITLE_TOKENS in disambiguate.py).
+_TITLE_TOKENS: frozenset[str] = frozenset({
+    "sergt", "serjt", "sgt", "sarjt", "sjt", "seri",
+    "serjeant", "sergeant", "sergiant",
+    "capt", "captain",
+    "lt", "lts", "lieut", "lieuts", "lieutenant", "lieutenants",
+    "corp", "cpl", "corporal",
+    "pvt", "private",
+    "major", "maj",
+    "col", "colonel",
+    "gen", "general",
+    "chief",
+    "dr", "doctor",
+    "mr", "mrs",
+})
+
+
+def _alias_plausible(raw: str, canonical: str) -> bool:
+    """Return True if *raw* plausibly refers to *canonical*.
+
+    Strips title/rank tokens from both strings, then tests whether at least one
+    meaningful token (≥ 3 chars) in the stripped alias is an exact match or
+    shares a prefix with a token in the stripped canonical name.
+
+    This accepts Journal spelling variants like "Oddeway" or "Ouderway" for
+    "JOHN ORDWAY" (ordway/ouderway share the "o" prefix run) while rejecting
+    clearly wrong names the LLM occasionally mis-assigns — e.g. "Sergt. Gass",
+    "Mr. Durion", or "Collins" landing on Ordway.
+
+    The check is deliberately loose to avoid silently dropping legitimate
+    phonetic variants for Native American names.
+    """
+    def _tokens(s: str) -> list[str]:
+        cleaned = re.sub(r"[^a-z0-9\s]", "", s.lower())
+        return [t for t in cleaned.split()
+                if t not in _TITLE_TOKENS and len(t) >= 3]
+
+    alias_toks = _tokens(raw)
+    canon_toks = _tokens(canonical)
+    if not alias_toks or not canon_toks:
+        return False   # bare title ("Serjeant") or empty canonical
+    for a in alias_toks:
+        for c in canon_toks:
+            if a == c or a.startswith(c) or c.startswith(a):
+                return True
+    return False
+
+
 # Hard alias → canonicalName reroutes for the most important figures.
 # If the LLM assigns the wrong canonicalName but the raw name text is
 # unambiguous, we correct the canonical before any MERGE runs so that
@@ -418,6 +486,18 @@ _ALIAS_REROUTE: dict[str, str] = {
         },
         "GEORGE DROUILLARD": {
             "drewyer", "drewger", "druyer", "george drouillard",
+        },
+        "JOSEPH FIELD": {
+            "jo field", "jo. field", "jo fields", "jo. fields",
+            "jos field", "jos. field", "jos. fields", "joseph fields",
+        },
+        "REUBIN FIELD": {
+            "r. field", "r field", "r. fields", "r fields",
+            "reubin field", "reuben field", "reuben fields",
+        },
+        "JOHN B. THOMPSON": {
+            "j. b. thompson", "j.b. thompson", "j. b thompson",
+            "j. thompson", "tompson",
         },
         # ── Native Nations ────────────────────────────────────────────────────
         "CHEYENNE": {
@@ -499,6 +579,18 @@ def write_graph(driver, chunk_id: str, date: str, result: ExtractionResult) -> N
         rerouted = _ALIAS_REROUTE.get(node.name.strip().lower())
         if rerouted and rerouted != node.canonicalName:
             node.canonicalName = rerouted
+        elif node.label == "Person" and not _alias_plausible(node.name, node.canonicalName):
+            # The LLM assigned this raw name to a completely different Person
+            # (e.g. "Sergt. Gass" on John Ordway's node).  Derive a canonical
+            # directly from the raw name by stripping title tokens so the node
+            # lands on the right person — or at least a stub the disambiguator
+            # can merge — rather than being silently dropped from the wrong one.
+            cleaned = re.sub(r"[^a-z0-9\s]", "", node.name.lower())
+            fallback_toks = [t for t in cleaned.split()
+                             if t not in _TITLE_TOKENS and len(t) >= 2]
+            fallback = " ".join(fallback_toks).upper()
+            if fallback and fallback != node.canonicalName:
+                node.canonicalName = fallback
 
     PLACEHOLDER_CANONICAL = {"UNKNOWN", "UNKNOWN SP.", "N/A", "NA", "NONE", ""} | set(VALID_NODE_LABELS) | {l.upper() for l in VALID_NODE_LABELS}
     node_map = {
@@ -522,9 +614,15 @@ def write_graph(driver, chunk_id: str, date: str, result: ExtractionResult) -> N
                     cn=node.canonicalName,
                 )
             # Append raw text form to aliases for provenance, skipping it when
-            # the LLM echoed the canonical name back as the raw name.
+            # the LLM echoed the canonical name back as the raw name, or when the
+            # raw text is a compound reference (contains "&") that the LLM failed
+            # to split into separate nodes despite the extraction rules, or a
+            # completely different name that the LLM mis-assigned to this node
+            # (e.g. "Sergt. Gass" or "Mr. Durion" landing on John Ordway).
             raw = node.name.strip()
-            if raw and raw != display_name and raw.upper() != node.canonicalName:
+            if (raw and raw != display_name and raw.upper() != node.canonicalName
+                    and "&" not in raw
+                    and _alias_plausible(raw, node.canonicalName)):
                 s.run(
                     f"MATCH (n:{node.label} {{canonicalName: $cn}})"
                     " WHERE NOT $raw IN coalesce(n.aliases, [])"
