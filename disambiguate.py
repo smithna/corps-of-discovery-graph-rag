@@ -232,6 +232,11 @@ def string_candidates(driver, label: str) -> set[tuple[str, str]]:
     1. Jaro-Winkler >= JARO_CUTOFF with first-character blocking.
     2. Token containment — all tokens of the shorter name appear in the longer
        name's token set (catches abbreviations across different initials).
+    3. Double Metaphone token comparison — JW on the phonetic codes of each
+       token pair >= 0.85.  Catches archaic/phonetic journal spellings where
+       JW on the raw strings falls short of JARO_CUTOFF, e.g. the
+       "Chabonah" family (XPN) vs "Charbonneau" family (XRPN): the metaphone
+       codes differ by one insertion but their JW is ~0.925.
 
     For Person names, leading title tokens (Sergt., Capt., Chief, etc.) are
     stripped before comparison so rank-prefixed names for *different* people
@@ -254,12 +259,17 @@ def string_candidates(driver, label: str) -> set[tuple[str, str]]:
                  apoc.text.join(tokA, ' ') AS strippedA,
                  apoc.text.join(tokB, ' ') AS strippedB
             WITH a, b, tokA, tokB, strippedA, strippedB,
-                 apoc.text.jaroWinklerDistance(strippedA, strippedB) AS jw
+                 apoc.text.jaroWinklerDistance(strippedA, strippedB) AS jw,
+                 [t IN tokA | apoc.text.doubleMetaphone(t)] AS metA,
+                 [t IN tokB | apoc.text.doubleMetaphone(t)] AS metB
             WHERE strippedA <> '' AND strippedB <> ''
               AND (
                 (left(strippedA, 1) = left(strippedB, 1) AND jw >= {JARO_CUTOFF})
                 OR (size(tokA) <= size(tokB) AND size(tokA) > 1 AND all(t IN tokA WHERE size(t) >= 3) AND all(t IN tokA WHERE t IN tokB))
                 OR (size(tokB) <  size(tokA) AND size(tokB) > 1 AND all(t IN tokB WHERE size(t) >= 3) AND all(t IN tokB WHERE t IN tokA))
+                OR any(mA IN metA WHERE mA <> '' AND size(mA) >= 3 AND
+                       any(mB IN metB WHERE mB <> '' AND size(mB) >= 3 AND
+                           apoc.text.jaroWinklerDistance(mA, mB) >= 0.85))
               )
             RETURN a.canonicalName AS name1, b.canonicalName AS name2
         """, titles=titles).data()

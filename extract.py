@@ -12,6 +12,7 @@ Re-run safe: chunks are marked graphExtracted=true on success and skipped.
 import asyncio
 import os
 import re
+from difflib import SequenceMatcher
 from pydantic import BaseModel
 
 from dotenv import load_dotenv
@@ -427,24 +428,25 @@ _TITLE_TOKENS: frozenset[str] = frozenset({
     "gen", "general",
     "chief",
     "dr", "doctor",
-    "mr", "mrs",
+    "mr", "mrs", "messers"
 })
 
 
 def _alias_plausible(raw: str, canonical: str) -> bool:
     """Return True if *raw* plausibly refers to *canonical*.
 
-    Strips title/rank tokens from both strings, then tests whether at least one
-    meaningful token (≥ 3 chars) in the stripped alias is an exact match or
-    shares a prefix with a token in the stripped canonical name.
+    Strips title/rank tokens from both strings, then tests each pair of
+    (alias token, canonical token) with three signals in order:
 
-    This accepts Journal spelling variants like "Oddeway" or "Ouderway" for
-    "JOHN ORDWAY" (ordway/ouderway share the "o" prefix run) while rejecting
-    clearly wrong names the LLM occasionally mis-assigns — e.g. "Sergt. Gass",
-    "Mr. Durion", or "Collins" landing on Ordway.
+    1. Exact match or prefix containment — fast path for clean variants.
+    2. SequenceMatcher ratio ≥ 0.65 — catches phonetic / archaic spellings
+       like "Chabonah" / "CHARBONNEAU" (≈ 0.78) while still rejecting
+       clearly wrong names like "Gass" / "ORDWAY" (≈ 0.18) or
+       "Durion" / "ORDWAY" (≈ 0.33).
 
-    The check is deliberately loose to avoid silently dropping legitimate
-    phonetic variants for Native American names.
+    Only applied to Person nodes; other label types keep their canonical
+    names even when the raw text looks very different (e.g. Teton Sioux →
+    LAKOTA).
     """
     def _tokens(s: str) -> list[str]:
         cleaned = re.sub(r"[^a-z0-9\s]", "", s.lower())
@@ -458,6 +460,8 @@ def _alias_plausible(raw: str, canonical: str) -> bool:
     for a in alias_toks:
         for c in canon_toks:
             if a == c or a.startswith(c) or c.startswith(a):
+                return True
+            if SequenceMatcher(None, a, c).ratio() >= 0.65:
                 return True
     return False
 
