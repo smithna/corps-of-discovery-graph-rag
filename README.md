@@ -33,8 +33,36 @@ The journals are a good benchmark corpus: they span 8,000 miles and two years, i
 ## Prerequisites
 
 - **Python 3.10+**
-- **Neo4j 5.x** — Desktop, AuraDB, or a local instance
+- **Neo4j 5.x** — see options below
 - **OpenAI API key** — used for embeddings (`text-embedding-3-small`) and extraction (`gpt-4o-mini`)
+
+### Neo4j setup
+
+The pipeline uses the **GDS** (Graph Data Science), **GenAI**, and **APOC** plugins. You have two options:
+
+#### Option A — Neo4j Desktop (recommended for local development)
+
+1. Download and install [Neo4j Desktop](https://neo4j.com/download/).
+2. Create a new **DBMS** using the latest Neo4j 5.x release.
+3. Open the DBMS and install three plugins from the *Plugins* tab: **APOC**, **Graph Data Science Library**, and **GenAI**.
+4. Start the DBMS.
+5. Use the following connection details in your `.env` file:
+   ```
+   NEO4J_URI=neo4j://127.0.0.1:7687
+   NEO4J_USER=neo4j
+   NEO4J_PASSWORD=<your DBMS password>
+   ```
+
+#### Option B — Neo4j Aura Free (cloud)
+
+1. Sign up at [neo4j.com/cloud/aura-free](https://neo4j.com/cloud/aura-free/) and create a free instance.
+2. Save the generated credentials — you will only see the password once.
+3. Use the `neo4j+s://` URI shown on the Aura console in your `.env` file.
+
+> **Note:** Aura Free does not include the GDS plugin. The disambiguation step
+> (`disambiguate.py`) uses GDS for node embedding similarity — you would need to
+> replace those calls with [Aura Graph Analytics](https://neo4j.com/docs/aura/aurads/),
+> which provides equivalent functionality via a separate API.
 
 ---
 
