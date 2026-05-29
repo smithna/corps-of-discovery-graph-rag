@@ -1,10 +1,8 @@
 import OpenAI from "openai";
 import { runQuery } from "./neo4j";
-
-const toDateStr = (d: unknown): string | null =>
-  d == null ? null : typeof d === "string" ? d : String(d);
 import {
   embedText,
+  toDateStr,
   vectorSearch,
   GraphContext,
   GraphEntity,
@@ -37,8 +35,6 @@ export interface AnchorParam {
   entityLabel?: string;
   /** The text that was embedded to produce the entity's vector */
   description?: string;
-  /** The capitalised word from the question that triggered a full-text match */
-  matchedTerm?: string;
   /** Cosine similarity score (vector matches) */
   score?: number;
 }
@@ -261,7 +257,6 @@ async function resolveParam(
         resolvedVia: "fulltext" as const,
         entityLabel: desc.label,
         description: rows[0].description,
-        matchedTerm: desc.query,
         score:       rows[0].score,
       };
     }
@@ -292,7 +287,6 @@ async function resolveParam(
     resolvedVia: "vector" as const,
     entityLabel: desc.label,
     description: rows[0].description,
-    matchedTerm: desc.query,
     score:       rows[0].score,
   };
 }
@@ -311,17 +305,18 @@ async function executeCypher(
 
 // ── Tool execution ─────────────────────────────────────────────────────────────
 
-async function runVectorSearch(
-  input: string,
-  embedding: number[],
-  callId: string
-): Promise<ToolCallResult> {
-  try {
-    const raw = await vectorSearch(embedding, 6);
-    const chunkIds = raw.map((c) => c.chunkId);
+// ── Shared graph helpers ───────────────────────────────────────────────────────
 
-    // Fetch entities and relationships for the retrieved chunks
-    const entityRows = await runQuery<{ chunkId: string; entities: GraphEntity[] }>(
+/**
+ * Fetch entities (per chunk) and cross-chunk relationships for a set of
+ * chunk IDs in parallel.  Used by both runVectorSearch and runSequenceContext.
+ */
+async function fetchGraphForChunks(ids: string[]): Promise<{
+  entityMap: Map<string, GraphEntity[]>;
+  relationships: GraphRelationship[];
+}> {
+  const [entityRows, relationships] = await Promise.all([
+    runQuery<{ chunkId: string; entities: GraphEntity[] }>(
       `UNWIND $ids AS cid
        MATCH (c:Chunk {chunkId: cid})
        OPTIONAL MATCH (e)-[:MENTIONED_IN]->(c)
@@ -329,11 +324,9 @@ async function runVectorSearch(
        WITH c.chunkId AS chunkId,
             collect(DISTINCT { label: head(labels(e)), name: coalesce(e.canonicalName, e.name, '') }) AS entities
        RETURN chunkId, entities`,
-      { ids: chunkIds }
-    );
-    const entityMap = new Map(entityRows.map((r) => [r.chunkId, r.entities ?? []]));
-
-    const relRows = await runQuery<GraphRelationship>(
+      { ids }
+    ),
+    runQuery<GraphRelationship>(
       `UNWIND $ids AS cid
        MATCH (a)-[:MENTIONED_IN]->(c:Chunk {chunkId: cid})
        WHERE NOT a:GenericLocation AND NOT a:Chunk
@@ -343,28 +336,45 @@ async function runVectorSearch(
        RETURN DISTINCT head(labels(a)) AS fromType, coalesce(a.canonicalName, a.name, '') AS from,
                        type(r) AS rel, head(labels(b)) AS toType, coalesce(b.canonicalName, b.name, '') AS to
        LIMIT 30`,
-      { ids: chunkIds }
-    );
+      { ids }
+    ),
+  ]);
+  return {
+    entityMap: new Map(entityRows.map((r) => [r.chunkId, r.entities ?? []])),
+    relationships,
+  };
+}
 
+/** Deduplicate entities across a list of chunks, keyed by label:name. */
+function dedupeEntities(chunks: SourceChunk[]): GraphEntity[] {
+  const seen = new Map<string, GraphEntity>();
+  for (const c of chunks)
+    for (const e of c.entities)
+      if (e.name) seen.set(`${e.label}:${e.name}`, e);
+  return [...seen.values()];
+}
+
+// ── Tool handlers ──────────────────────────────────────────────────────────────
+
+async function runVectorSearch(
+  input: string,
+  embedding: number[],
+  callId: string
+): Promise<ToolCallResult> {
+  try {
+    const raw = await vectorSearch(embedding, 8);
+    const { entityMap, relationships } = await fetchGraphForChunks(raw.map((c) => c.chunkId));
     const chunks: SourceChunk[] = raw.map((c) => ({
       ...c,
       retrieval: "vector" as const,
       entities: entityMap.get(c.chunkId) ?? [],
     }));
-
-    const allEntityMap = new Map<string, GraphEntity>();
-    for (const c of chunks) {
-      for (const e of c.entities) {
-        if (e.name) allEntityMap.set(`${e.label}:${e.name}`, e);
-      }
-    }
-
     return {
       callId,
       tool: "vector_search",
       input,
       chunks,
-      graph: { entities: [...allEntityMap.values()], relationships: relRows },
+      graph: { entities: dedupeEntities(chunks), relationships },
     };
   } catch (err: unknown) {
     return { callId, tool: "vector_search", input, error: (err as Error).message };
@@ -377,10 +387,8 @@ async function runSequenceContext(
   callId: string
 ): Promise<ToolCallResult> {
   try {
-    // Find anchor chunks via vector search
     const anchors = await vectorSearch(embedding, 3);
     const anchorIds = anchors.map((c) => c.chunkId);
-    const allIds = anchors.map((c) => c.chunkId);
 
     // Walk NEXT_CHUNK backward to surface preceding entries
     const preceding = await runQuery<{
@@ -388,42 +396,16 @@ async function runSequenceContext(
     }>(
       `UNWIND $anchorIds AS anchorId
        MATCH (prev:Chunk)-[:NEXT_CHUNK*1..5]->(anchor:Chunk {chunkId: anchorId})
-       WHERE NOT prev.chunkId IN $allIds
+       WHERE NOT prev.chunkId IN $anchorIds
        RETURN DISTINCT prev.chunkId AS chunkId, prev.text AS text,
                        prev.date AS date, prev.author AS author
        ORDER BY prev.date ASC
        LIMIT 8`,
-      { anchorIds, allIds }
+      { anchorIds }
     );
 
-    const combinedIds = [...allIds, ...preceding.map((r) => r.chunkId)];
-
-    // Fetch entities for all chunks
-    const entityRows = await runQuery<{ chunkId: string; entities: GraphEntity[] }>(
-      `UNWIND $ids AS cid
-       MATCH (c:Chunk {chunkId: cid})
-       OPTIONAL MATCH (e)-[:MENTIONED_IN]->(c)
-       WHERE NOT e:GenericLocation AND NOT e:Chunk
-       WITH c.chunkId AS chunkId,
-            collect(DISTINCT { label: head(labels(e)), name: coalesce(e.canonicalName, e.name, '') }) AS entities
-       RETURN chunkId, entities`,
-      { ids: combinedIds }
-    );
-    const entityMap = new Map(entityRows.map((r) => [r.chunkId, r.entities ?? []]));
-
-    // Relationships
-    const relRows = await runQuery<GraphRelationship>(
-      `UNWIND $ids AS cid
-       MATCH (a)-[:MENTIONED_IN]->(c:Chunk {chunkId: cid})
-       WHERE NOT a:GenericLocation AND NOT a:Chunk
-       MATCH (a)-[r]->(b)
-       WHERE type(r) <> 'MENTIONED_IN' AND NOT b:Chunk AND NOT b:GenericLocation
-         AND EXISTS { MATCH (b)-[:MENTIONED_IN]->(c2:Chunk) WHERE c2.chunkId IN $ids }
-       RETURN DISTINCT head(labels(a)) AS fromType, coalesce(a.canonicalName, a.name, '') AS from,
-                       type(r) AS rel, head(labels(b)) AS toType, coalesce(b.canonicalName, b.name, '') AS to
-       LIMIT 30`,
-      { ids: combinedIds }
-    );
+    const combinedIds = [...anchorIds, ...preceding.map((r) => r.chunkId)];
+    const { entityMap, relationships } = await fetchGraphForChunks(combinedIds);
 
     const vectorChunks: SourceChunk[] = anchors.map((c) => ({
       ...c,
@@ -437,20 +419,14 @@ async function runSequenceContext(
       retrieval: "sequence" as const,
       entities: entityMap.get(c.chunkId) ?? [],
     }));
-
-    const allEntityMap = new Map<string, GraphEntity>();
-    for (const c of [...vectorChunks, ...seqChunks]) {
-      for (const e of c.entities) {
-        if (e.name) allEntityMap.set(`${e.label}:${e.name}`, e);
-      }
-    }
+    const chunks = [...vectorChunks, ...seqChunks];
 
     return {
       callId,
       tool: "sequence_context",
       input,
-      chunks: [...vectorChunks, ...seqChunks],
-      graph: { entities: [...allEntityMap.values()], relationships: relRows },
+      chunks,
+      graph: { entities: dedupeEntities(chunks), relationships },
     };
   } catch (err: unknown) {
     return { callId, tool: "sequence_context", input, error: (err as Error).message };
@@ -462,18 +438,13 @@ async function runSequenceContext(
 async function enrichCypherGraph(
   results: Record<string, unknown>[]
 ): Promise<GraphContext> {
-  // Collect every non-empty string value from the result rows
   const nameSet = new Set<string>();
-  for (const row of results) {
-    for (const val of Object.values(row)) {
+  for (const row of results)
+    for (const val of Object.values(row))
       if (typeof val === "string" && val.trim()) nameSet.add(val.trim());
-    }
-  }
   if (nameSet.size === 0) return { entities: [], relationships: [] };
 
   const names = [...nameSet];
-
-  // Resolve names to graph nodes (covers canonicalName AND Taxon.name)
   const entityRows = await runQuery<GraphEntity>(
     `UNWIND $names AS name
      MATCH (n) WHERE coalesce(n.canonicalName, n.name) = name
@@ -486,27 +457,24 @@ async function enrichCypherGraph(
   if (entityRows.length === 0) return { entities: [], relationships: [] };
 
   const entityNames = entityRows.map((e) => e.name);
+  const [relRows] = await Promise.all([
+    runQuery<GraphRelationship>(
+      `UNWIND $names AS name
+       MATCH (a) WHERE coalesce(a.canonicalName, a.name) = name
+         AND NOT a:Chunk AND NOT a:GenericLocation
+       MATCH (a)-[r]->(b)
+       WHERE type(r) <> 'MENTIONED_IN' AND NOT b:Chunk AND NOT b:GenericLocation
+         AND coalesce(b.canonicalName, b.name) IN $names
+       RETURN DISTINCT
+         head(labels(a)) AS fromType, coalesce(a.canonicalName, a.name) AS from,
+         type(r)         AS rel,
+         head(labels(b)) AS toType,  coalesce(b.canonicalName, b.name) AS to
+       LIMIT 40`,
+      { names: entityNames }
+    ),
+  ]);
 
-  // Find relationships between any of these nodes
-  const relRows = await runQuery<GraphRelationship>(
-    `UNWIND $names AS name
-     MATCH (a) WHERE coalesce(a.canonicalName, a.name) = name
-       AND NOT a:Chunk AND NOT a:GenericLocation
-     MATCH (a)-[r]->(b)
-     WHERE type(r) <> 'MENTIONED_IN' AND NOT b:Chunk AND NOT b:GenericLocation
-       AND coalesce(b.canonicalName, b.name) IN $names
-     RETURN DISTINCT
-       head(labels(a)) AS fromType, coalesce(a.canonicalName, a.name) AS from,
-       type(r)         AS rel,
-       head(labels(b)) AS toType,  coalesce(b.canonicalName, b.name) AS to
-     LIMIT 40`,
-    { names: entityNames }
-  );
-
-  return {
-    entities: entityRows,
-    relationships: relRows,
-  };
+  return { entities: entityRows, relationships: relRows };
 }
 
 async function runCypherQuery(
@@ -695,12 +663,13 @@ export async function* runAgent(
 
   // Step 3: Aggregate sources for the UI
   const allChunks: SourceChunk[] = [];
+  const seenChunkIds = new Set<string>();
   const entityMap = new Map<string, GraphEntity>();
   const relMap = new Map<string, GraphRelationship>();
 
   for (const r of results) {
     for (const c of r.chunks ?? []) {
-      if (!allChunks.find((x) => x.chunkId === c.chunkId)) allChunks.push(c);
+      if (!seenChunkIds.has(c.chunkId)) { seenChunkIds.add(c.chunkId); allChunks.push(c); }
     }
     for (const e of r.graph?.entities ?? []) {
       if (e.name) entityMap.set(`${e.label}:${e.name}`, e);

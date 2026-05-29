@@ -5,7 +5,7 @@ import {
   buildVectorContext,
   Chunk,
 } from "@/lib/search";
-import { runAgent, AgentEvent } from "@/lib/agent";
+import { runAgent } from "@/lib/agent";
 
 export const runtime = "nodejs";
 

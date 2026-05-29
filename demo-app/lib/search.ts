@@ -5,7 +5,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Neo4j returns date properties as driver Date objects, not strings.
 // This helper converts either form to an ISO string (or null).
-const toDateStr = (d: unknown): string | null =>
+export const toDateStr = (d: unknown): string | null =>
   d == null ? null : typeof d === "string" ? d : String(d);
 
 export interface Chunk {
