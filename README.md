@@ -24,6 +24,7 @@ The journals are a good benchmark corpus: they span 8,000 miles and two years, i
 ├── embed_entities.py       # Embed entity canonical names for similarity search
 ├── requirements.txt
 ├── .env.example
+├── data/                   # Pre-built Neo4j dump (skip ingest for the demo)
 ├── demo-app/               # Next.js side-by-side comparison app
 └── docs/                   # Talk slides, outline, and demo question bank
 ```
@@ -80,6 +81,17 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env — fill in NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, OPENAI_API_KEY
 ```
+
+---
+
+## Skip ingest — restore from dump
+
+If you want to jump straight to the demo without running the full pipeline (~45 min, LLM API costs), restore the pre-built database dump.
+
+1. Download `lewis-clark-graphrag.dump` from the [latest release](../../releases/latest) (or via `gh release download --pattern "lewis-clark-graphrag.dump" --dir data/`) and place it in the `data/` directory.
+2. Restore it — see [`data/README.md`](data/README.md) for Neo4j Desktop and CLI instructions.
+
+After restoring, proceed directly to [Demo app](#demo-app).
 
 ---
 

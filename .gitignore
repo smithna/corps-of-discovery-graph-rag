@@ -1,3 +1,6 @@
+# Database dumps (distributed via GitHub Releases, not committed to the repo)
+*.dump
+
 # Environment
 .env
 .env.local
