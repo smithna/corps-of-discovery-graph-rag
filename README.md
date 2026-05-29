@@ -88,7 +88,7 @@ cp .env.example .env
 
 If you want to jump straight to the demo without running the full pipeline (~45 min, LLM API costs), restore the pre-built database dump.
 
-1. Download `lewis-clark-graphrag.dump` from the [latest release](../../releases/latest) (or via `gh release download --pattern "lewis-clark-graphrag.dump" --dir data/`) and place it in the `data/` directory.
+1. Download `lewis-clark-graphrag.dump` from the [latest release](https://github.com/smithna/corps-of-discovery-graph-rag/releases/latest) (or via `gh release download --pattern "lewis-clark-graphrag.dump" --dir data/`) and place it in the `data/` directory.
 2. Restore it — see [`data/README.md`](data/README.md) for Neo4j Desktop and CLI instructions.
 
 After restoring, proceed directly to [Demo app](#demo-app).

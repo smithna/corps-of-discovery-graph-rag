@@ -4,7 +4,7 @@ This directory is a placeholder for the Neo4j database dump. The dump file is to
 
 ## Download
 
-Grab `lewis-clark-graphrag.dump` from the [latest release](../../releases/latest) and place it in this directory.
+Grab `lewis-clark-graphrag.dump` from the [latest release](https://github.com/smithna/corps-of-discovery-graph-rag/releases/latest) and place it in this directory.
 
 ```bash
 # Example using GitHub CLI
