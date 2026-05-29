@@ -281,15 +281,26 @@ def string_candidates(driver, label: str) -> set[tuple[str, str]]:
 
 
 def alias_candidates(driver, label: str) -> set[tuple[str, str]]:
-    """Pairs where nodes share an alias, or one node's alias matches another's
-    canonicalName — strong signal they are the same entity."""
+    """Pairs where nodes share an alias (case-insensitive), or one node's
+    alias uppercased matches the other node's canonicalName — strong signal
+    they are the same entity.
+
+    Both directions are checked for the canonicalName match (a's alias vs
+    b's canonical, and b's alias vs a's canonical) so the ordering of a < b
+    does not cause misses.  Alias-vs-alias comparison is case-insensitive so
+    "RATTLE SNAKE" and "rattle snake" are recognised as the same alias.
+    """
     with driver.session() as s:
         rows = s.run(f"""
             MATCH (a:{label}), (b:{label})
             WHERE a.canonicalName < b.canonicalName
-              AND any(alias IN coalesce(a.aliases, []) WHERE
-                    alias IN coalesce(b.aliases, [])
-                    OR toUpper(alias) = b.canonicalName)
+              AND (
+                any(aa IN coalesce(a.aliases, []) WHERE
+                      toUpper(aa) = b.canonicalName
+                      OR any(ba IN coalesce(b.aliases, []) WHERE toLower(aa) = toLower(ba)))
+                OR any(ba IN coalesce(b.aliases, []) WHERE
+                      toUpper(ba) = a.canonicalName)
+              )
             RETURN a.canonicalName AS name1, b.canonicalName AS name2
         """).data()
     return {(r["name1"], r["name2"]) for r in rows if r["name1"] and r["name2"]}
